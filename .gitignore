@@ -26,3 +26,7 @@ Thumbs.db
 
 # Docker volumes
 docker-volumes/
+
+# Allow Spark ML models Parquet files
+!*model/**/*.parquet
+
