@@ -1,0 +1,74 @@
+services:
+  # ── Zookeeper: Manajemen cluster Kafka ─────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  # ── Kafka: Layer Ingestion (Real-time stream) ──────
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka
+    depends_on: [ zookeeper ]
+    ports: [ '9092:9092' ]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  # ── ClickHouse: Layer Storage (Performa Tinggi) ────
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: clickhouse
+    ports:
+      - '8123:8123' # HTTP interface untuk Python/Spark JDBC
+      - '9000:9000' # TCP native interface
+    environment:
+      # <--- TAMBAHKAN BARIS INI
+      - CLICKHOUSE_USER=mahasiswa # <--- TAMBAHKAN BARIS INI
+      - CLICKHOUSE_PASSWORD=bigdata123 # <--- TAMBAHKAN BARIS INI
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+
+  # ── Spark Master: Mengelola komputasi ML ───────────
+  spark-master:
+    image: bde2020/spark-master:3.0.0-hadoop3.2
+    container_name: spark-master
+    ports: [ '8080:8080', '7077:7077' ]
+    environment:
+      - INIT_DAEMON_STEP=setup_spark
+
+  # ── Spark Worker: Pemroses Data (Dibatasi RAM-nya) ─
+  spark-worker:
+    image: bde2020/spark-worker:3.0.0-hadoop3.2
+    container_name: spark-worker
+    depends_on: [ spark-master ]
+    environment:
+      - SPARK_MASTER=spark://spark-master:7077
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=4g
+    deploy:
+      resources:
+        limits:
+          memory: 5g # Sangat penting agar laptop tidak freeze
+
+  # ── Grafana: Layer Visualisasi Dashboard ───────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports: [ '3000:3000' ]
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  clickhouse-data:
+  grafana-data:
