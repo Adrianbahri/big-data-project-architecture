@@ -1,4 +1,6 @@
 import os
+import json
+import datetime
 os.environ["JAVA_HOME"] = "/opt/homebrew/opt/openjdk@17"
 os.environ["PYSPARK_SUBMIT_ARGS"] = "--packages com.clickhouse:clickhouse-jdbc:0.4.6 pyspark-shell"
 
@@ -163,5 +165,50 @@ elif kappa > 0.95:
     print(f"   ⚠️  PERINGATAN: Kappa {kappa:.3f} terlalu sempurna — periksa fitur!")
 else:
     print(f"   ✅ Tidak terdeteksi overfitting. Hasil realistis untuk data taksi nyata.")
+
+# ================================================================
+# EKSPOR METRIK KE JSON — dibaca oleh Streamlit Dashboard
+# ================================================================
+print("\n[Ekspor] Menyimpan metrik ke models/evaluation_metrics.json...")
+
+# Confusion matrix data
+cm_data = []
+for actual in [0.0, 1.0, 2.0]:
+    row = []
+    for predicted in [0.0, 1.0, 2.0]:
+        count = pred_class.filter(
+            (col("tipCategory") == actual) & (col("prediction") == predicted)
+        ).count()
+        row.append(count)
+    cm_data.append(row)
+
+# Feature importance
+feature_importance = {
+    name: float(imp)
+    for name, imp in zip(FEATURE_COLS, model_reg.featureImportances)
+}
+
+metrics = {
+    "timestamp": datetime.datetime.now().isoformat(),
+    "regression": {
+        "rmse": round(rmse, 4),
+        "mae":  round(mae, 4),
+        "r2":   round(r2, 4),
+    },
+    "classification": {
+        "accuracy": round(acc, 4),
+        "f1":       round(f1, 4),
+        "kappa":    round(kappa, 4),
+        "kappa_interpretation": kappa_interp,
+    },
+    "feature_importance": feature_importance,
+    "confusion_matrix": cm_data,
+    "confusion_matrix_labels": ["Rendah (0-2$)", "Menengah (2-5$)", "Tinggi (>5$)"],
+}
+
+metrics_path = os.path.join(os.path.dirname(__file__), "..", "models", "evaluation_metrics.json")
+with open(metrics_path, "w") as f:
+    json.dump(metrics, f, indent=2)
+print(f"[Ekspor] ✅ Metrik tersimpan di: {os.path.abspath(metrics_path)}")
 
 spark.stop()

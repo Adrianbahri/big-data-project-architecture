@@ -2,7 +2,7 @@ import os
 os.environ["JAVA_HOME"] = "/opt/homebrew/opt/openjdk@17"
 os.environ["PYSPARK_SUBMIT_ARGS"] = (
     "--packages com.clickhouse:clickhouse-jdbc:0.4.6,"
-    "org.apache.spark:spark-sql-kafka-0-10_2.13:3.5.0 pyspark-shell"
+    "org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.0 pyspark-shell"
 )
 
 from pyspark.sql import SparkSession
@@ -10,17 +10,6 @@ from pyspark.sql.functions import from_json, col, to_timestamp, current_timestam
 from pyspark.sql.types import (StructType, StructField,
                                DoubleType, IntegerType, FloatType)
 
-# ============================================================
-# KAPPA ARCHITECTURE — Stream Ingest Layer
-#
-# Peran: Satu-satunya jalur data masuk ke ClickHouse.
-# Tidak ada batch ingest terpisah.
-#
-# Aliran:
-#   Kafka (green-taxi-stream)
-#     → Spark Structured Streaming
-#       → ClickHouse (Serving Layer)
-# ============================================================
 
 print("="*60)
 print("  KAPPA ARCHITECTURE — Stream Ingest to ClickHouse")

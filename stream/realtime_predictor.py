@@ -2,7 +2,7 @@ import os
 os.environ["JAVA_HOME"] = "/opt/homebrew/opt/openjdk@17"
 os.environ["PYSPARK_SUBMIT_ARGS"] = (
     "--packages com.clickhouse:clickhouse-jdbc:0.4.6,"
-    "org.apache.spark:spark-sql-kafka-0-10_2.13:3.5.0 pyspark-shell"
+    "org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.0 pyspark-shell"
 )
 
 from pyspark.sql import SparkSession
@@ -84,37 +84,29 @@ def predict_and_display(batch_df, batch_id):
     if batch_df.isEmpty():
         return
 
-    pred_reg   = reg_model.transform(batch_df)
+    # Regresi: prediksi nilai tip nominal
+    pred_reg = reg_model.transform(batch_df)
+    # Rename kolom 'prediction' dari regresi agar tidak bentrok dengan klasifikasi
+    pred_reg = pred_reg.withColumnRenamed("prediction", "pred_tip")
+
+    # Klasifikasi: prediksi kategori tip
     pred_class = class_model.transform(pred_reg)
+    pred_class = pred_class.withColumnRenamed("prediction", "pred_category")
 
     results = pred_class.select(
         "fareAmount", "tripDistance", "passengerCount",
-        "tip_amount", "prediction", "prediction"
+        "tip_amount", "pred_tip", "pred_category"
     ).collect()
 
     print(f"\n{'─'*70}")
-    print(f"  [Batch {batch_id}] {len(results)} prediksi baru masuk:")
-    print(f"  {'Fare':>7} {'Dist':>6} {'Pax':>4}  │  {'Tip Aktual':>10}  {'Tip Prediksi':>12}  Kategori")
-    print(f"  {'─'*7}  {'─'*6}  {'─'*3}  │  {'─'*10}  {'─'*12}  {'─'*16}")
+    print(f"  [Batch {batch_id}] {len(results)} prediksi baru:")
+    print(f"  {'Fare':>7} {'Dist':>6} {'Pax':>4}  |  {'Tip Aktual':>10}  {'Tip Prediksi':>12}  Kategori")
+    print(f"  {'─'*7}  {'─'*6}  {'─'*3}  |  {'─'*10}  {'─'*12}  {'─'*16}")
 
-    # Prediksi lengkap dengan kategori
-    pred_full = class_model.transform(reg_model.transform(batch_df))
-    for row in pred_full.select(
-            "fareAmount", "tripDistance", "passengerCount",
-            "tip_amount", col("prediction").alias("pred_nominal"),
-            col("prediction").alias("pred_cat")
-        ).collect():
-        # Re-run dengan kedua model
-        pass
-
-    # Simple display
-    for row in pred_class.select(
-        "fareAmount", "tripDistance", "passengerCount",
-        "tip_amount", col("prediction").alias("pred_nominal")
-    ).collect():
-        kategori = "Rendah" if row.pred_nominal < 2 else ("Menengah" if row.pred_nominal < 5 else "Tinggi")
-        print(f"  ${row.fareAmount:>6.2f}  {row.tripDistance:>5.1f}mi  {row.passengerCount:>3}  │  "
-              f"${row.tip_amount:>9.2f}  ${row.pred_nominal:>11.2f}  {kategori}")
+    for row in results:
+        cat_label = LABEL_MAP.get(int(row.pred_category), "?")
+        print(f"  ${row.fareAmount:>6.2f}  {row.tripDistance:>5.1f}mi  {row.passengerCount:>3}  |  "
+              f"${row.tip_amount:>9.2f}  ${row.pred_tip:>11.2f}  {cat_label}")
 
 # Jalankan streaming prediction
 query = df_features.writeStream \
