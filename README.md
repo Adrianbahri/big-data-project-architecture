@@ -133,12 +133,12 @@ docker compose ps   # verifikasi semua container UP
 
 ### 4. Buat Tabel ClickHouse
 ```bash
-python create_table.py
+python setup/create_table.py
 ```
 
 ### 5. Import Data Historis (NYC TLC 2015–2018)
 ```bash
-python import_taxi.py
+python setup/import_taxi.py
 ```
 > ⏳ Proses ini mengunduh ~54 juta baris dari NYC TLC cloud. Butuh waktu 30–60 menit tergantung koneksi internet.
 
@@ -161,13 +161,13 @@ Script ini akan otomatis:
 
 #### A. Training Model
 ```bash
-python spark_batch_training.py
+cd ml && python spark_batch_training.py
 ```
-> ⏳ ~15–30 menit untuk 54 juta baris. Output: `taxi_reg_model/` + `taxi_class_model/`
+> ⏳ ~15–30 menit untuk 54 juta baris. Output: `models/taxi_reg_model/` + `models/taxi_class_model/`
 
 #### B. Evaluasi Model
 ```bash
-python evaluate_model.py
+cd ml && python evaluate_model.py
 ```
 Output: RMSE, MAE, R², Akurasi, F1-Score, **Cohen's Kappa (κ)**, Confusion Matrix
 
@@ -176,18 +176,18 @@ Buka **3 terminal terpisah**:
 
 ```bash
 # Terminal 1 — Kafka Producer (kirim data ke stream)
-python data_generator.py
+cd stream && python data_generator.py
 
 # Terminal 2 — Stream Ingest (Kafka → ClickHouse)
-python kappa_stream_ingest.py
+cd stream && python kappa_stream_ingest.py
 
 # Terminal 3 — Real-time Prediction (Kafka → ML Prediction)
-python realtime_predictor.py
+cd stream && python realtime_predictor.py
 ```
 
 #### D. Dashboard Interaktif (Streamlit)
 ```bash
-streamlit run app.py
+cd dashboard && streamlit run app.py
 # Buka: http://localhost:8501
 ```
 
@@ -205,26 +205,36 @@ streamlit run app.py
 ```
 BIG DATA AKHIR/
 ├── docker-compose.yml
+├── hadoop.env
 ├── requirements.txt
 ├── run_all.sh
 ├── README.md
+├── MODEL.md
 │
-├── create_table.py
-├── import_taxi.py
+├── setup/
+│   ├── create_table.py
+│   └── import_taxi.py
 │
-├── data_generator.py
-├── kappa_stream_ingest.py
-├── realtime_predictor.py
+├── stream/
+│   ├── data_generator.py
+│   ├── kappa_stream_ingest.py
+│   └── realtime_predictor.py
 │
-├── spark_batch_training.py
-├── evaluate_model.py
-├── predict.py
-├── app.py
+├── ml/
+│   ├── spark_batch_training.py
+│   ├── evaluate_model.py
+│   └── predict.py
 │
-├── taxi_reg_model/
-├── taxi_class_model/
+├── dashboard/
+│   └── app.py
+│
+├── models/               ← dibuat otomatis, tidak di-push ke git
+│   ├── taxi_reg_model/
+│   └── taxi_class_model/
+│
+├── checkpoints/          ← dibuat saat streaming, tidak di-push ke git
+├── logs/                 ← dibuat oleh run_all.sh, tidak di-push ke git
 ├── clickhouse-config/
-├── logs/
 └── venv/
 ```
 
@@ -247,8 +257,8 @@ BIG DATA AKHIR/
 
 | File | Penjelasan |
 |------|-----------|
-| `create_table.py` | Membuat database `taxi_db` dan tabel `green_taxi` di ClickHouse dengan skema yang benar, termasuk kolom `tip_amount` (nilai tip asli dari NYC TLC). **Jalankan sekali di awal sebelum import data.** |
-| `import_taxi.py` | Mengunduh data Green Taxi NYC 2015–2018 langsung dari server cloud NYC TLC (format `.parquet`), membersihkan data, lalu menyimpannya ke ClickHouse. Mengimpor ~54 juta baris. **Jalankan sekali setelah `create_table.py`.** |
+| `setup/create_table.py` | Membuat database `taxi_db` dan tabel `green_taxi` di ClickHouse dengan skema yang benar, termasuk kolom `tip_amount` (nilai tip asli dari NYC TLC). **Jalankan sekali di awal sebelum import data.** |
+| `setup/import_taxi.py` | Mengunduh data Green Taxi NYC 2015–2018 langsung dari server cloud NYC TLC (format `.parquet`), membersihkan data, lalu menyimpannya ke ClickHouse. Mengimpor ~54 juta baris. **Jalankan sekali setelah `create_table.py`.** |
 
 ---
 
@@ -258,9 +268,9 @@ Tiga file ini membentuk jalur streaming tunggal sesuai Kappa Architecture. Tidak
 
 | File | Peran dalam Kappa | Penjelasan |
 |------|-------------------|-----------|
-| `data_generator.py` | **Kafka Producer** | Pintu masuk satu-satunya untuk data baru ke dalam sistem. Menghasilkan data trip taksi realistis (termasuk 30% trip tanpa tip) dan mengirimkannya ke Kafka topic `green-taxi-stream` setiap 0.5–2 detik. |
-| `kappa_stream_ingest.py` | **Stream → Serving Layer** | Membaca stream data dari Kafka menggunakan Spark Structured Streaming, lalu menyimpannya ke ClickHouse (Serving Layer) setiap 10 detik via `foreachBatch`. Ini satu-satunya cara data masuk ke database setelah import historis. |
-| `realtime_predictor.py` | **Stream → Prediksi** | Membaca stream data dari Kafka secara paralel, lalu langsung memprediksi nilai tip menggunakan model yang sudah dilatih. Output ditampilkan ke konsol secara real-time setiap 5 detik. |
+| `stream/data_generator.py` | **Kafka Producer** | Pintu masuk satu-satunya untuk data baru ke dalam sistem. Menghasilkan data trip taksi realistis (termasuk 30% trip tanpa tip) dan mengirimkannya ke Kafka topic `green-taxi-stream` setiap 0.5–2 detik. |
+| `stream/kappa_stream_ingest.py` | **Stream → Serving Layer** | Membaca stream data dari Kafka menggunakan Spark Structured Streaming, lalu menyimpannya ke ClickHouse (Serving Layer) setiap 10 detik via `foreachBatch`. Ini satu-satunya cara data masuk ke database setelah import historis. |
+| `stream/realtime_predictor.py` | **Stream → Prediksi** | Membaca stream data dari Kafka secara paralel, lalu langsung memprediksi nilai tip menggunakan model yang sudah dilatih. Output ditampilkan ke konsol secara real-time setiap 5 detik. |
 
 > 💡 Untuk mode real-time penuh, jalankan ketiga file ini di terminal terpisah secara bersamaan.
 
@@ -270,9 +280,9 @@ Tiga file ini membentuk jalur streaming tunggal sesuai Kappa Architecture. Tidak
 
 | File | Penjelasan |
 |------|-----------|
-| `spark_batch_training.py` | Membaca data dari ClickHouse (Serving Layer yang diisi oleh stream), lalu melatih dua model Random Forest: **Regresi** (prediksi nilai tip nominal dalam $) dan **Klasifikasi** (prediksi kategori Rendah/Menengah/Tinggi). Menyertakan evaluasi lengkap termasuk **Cohen's Kappa**. Output: folder `taxi_reg_model/` dan `taxi_class_model/`. |
-| `evaluate_model.py` | Memuat model yang sudah tersimpan dan mengevaluasinya pada 30.000 baris data dari ClickHouse. Menampilkan RMSE, MAE, R², Akurasi, F1-Score, **Cohen's Kappa (κ)**, Confusion Matrix, dan Feature Importance. Deteksi overfitting otomatis. |
-| `predict.py` | Script sederhana untuk test prediksi manual dengan beberapa contoh data trip. Berguna untuk verifikasi cepat bahwa model berjalan benar setelah training. |
+| `ml/spark_batch_training.py` | Membaca data dari ClickHouse (Serving Layer yang diisi oleh stream), lalu melatih dua model Random Forest: **Regresi** (prediksi nilai tip nominal dalam $) dan **Klasifikasi** (prediksi kategori Rendah/Menengah/Tinggi). Menyertakan evaluasi lengkap termasuk **Cohen's Kappa**. Output: `models/taxi_reg_model/` dan `models/taxi_class_model/`. |
+| `ml/evaluate_model.py` | Memuat model yang sudah tersimpan dan mengevaluasinya pada 30.000 baris data dari ClickHouse. Menampilkan RMSE, MAE, R², Akurasi, F1-Score, **Cohen's Kappa (κ)**, Confusion Matrix, dan Feature Importance. Deteksi overfitting otomatis. |
+| `ml/predict.py` | Script sederhana untuk test prediksi manual dengan beberapa contoh data trip. Berguna untuk verifikasi cepat bahwa model berjalan benar setelah training. |
 
 ---
 
@@ -280,7 +290,7 @@ Tiga file ini membentuk jalur streaming tunggal sesuai Kappa Architecture. Tidak
 
 | File | Penjelasan |
 |------|-----------|
-| `app.py` | Dashboard web interaktif menggunakan Streamlit. User bisa memasukkan data perjalanan (jarak, penumpang, zona, jam, hari) dan mendapatkan prediksi tip nominal ($) beserta kategorinya secara real-time. Jalankan dengan `streamlit run app.py`, akses di `http://localhost:8501`. |
+| `dashboard/app.py` | Dashboard web interaktif menggunakan Streamlit. User bisa memasukkan data perjalanan (jarak, penumpang, zona, jam, hari) dan mendapatkan prediksi tip nominal ($) beserta kategorinya secara real-time. Jalankan dengan `cd dashboard && streamlit run app.py`, akses di `http://localhost:8501`. |
 
 ---
 
@@ -288,8 +298,9 @@ Tiga file ini membentuk jalur streaming tunggal sesuai Kappa Architecture. Tidak
 
 | Folder | Isi |
 |--------|-----|
-| `taxi_reg_model/` | Model Random Forest Regressor yang sudah dilatih. Digunakan oleh `predict.py`, `realtime_predictor.py`, dan `app.py`. |
-| `taxi_class_model/` | Model Random Forest Classifier yang sudah dilatih. Digunakan oleh `predict.py`, `realtime_predictor.py`, dan `app.py`. |
+| `models/taxi_reg_model/` | Model Random Forest Regressor yang sudah dilatih. Digunakan oleh `ml/predict.py`, `stream/realtime_predictor.py`, dan `dashboard/app.py`. Tidak di-push ke git (generate ulang via training). |
+| `models/taxi_class_model/` | Model Random Forest Classifier yang sudah dilatih. Digunakan oleh `ml/predict.py`, `stream/realtime_predictor.py`, dan `dashboard/app.py`. Tidak di-push ke git. |
+| `checkpoints/` | Checkpoint Spark Streaming untuk `kappa_stream_ingest.py` dan `realtime_predictor.py`. Dibuat otomatis, tidak di-push ke git. |
 | `logs/` | File log hasil training (`training.log`), evaluasi (`evaluation.log`), dan prediksi (`predict.log`). Dibuat otomatis oleh `run_all.sh`. |
 | `venv/` | Virtual environment Python. Tidak perlu disentuh manual. |
 
