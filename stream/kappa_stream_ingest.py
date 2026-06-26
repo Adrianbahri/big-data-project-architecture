@@ -2,7 +2,7 @@ import os
 os.environ["JAVA_HOME"] = "/opt/homebrew/opt/openjdk@17"
 os.environ["PYSPARK_SUBMIT_ARGS"] = (
     "--packages com.clickhouse:clickhouse-jdbc:0.4.6,"
-    "org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.0 pyspark-shell"
+    "org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.2 pyspark-shell"
 )
 
 from pyspark.sql import SparkSession
